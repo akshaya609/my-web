@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>
+AI-Based 4G/5G Traffic Prediction
+</title>
+
+<style>
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: Arial, sans-serif;
+}
+
+body {
+
+    background: #f4f6f9;
+    color: #111827;
+
+}
+
+header {
+
+    background: #111827;
+    color: white;
+
+    padding: 20px 30px;
+
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+}
+
+header h1 {
+
+    font-size: 24px;
+
+}
+
+.connection {
+
+    padding: 8px 15px;
+    border-radius: 20px;
+
+    background: #16a34a;
+    color: white;
+
+    font-size: 14px;
+
+}
+
+.connection.offline {
+
+    background: #dc2626;
+
+}
+
+.container {
+
+    padding: 25px;
+
+    max-width: 1400px;
+
+    margin: auto;
+
+}
+
+
+/* STATUS */
+
+.status-panel {
+
+    background: white;
+
+    padding: 20px;
+
+    border-radius: 12px;
+
+    margin-bottom: 20px;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,0.08);
+
+}
+
+.status-row {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    flex-wrap: wrap;
+
+    gap: 15px;
+
+}
+
+.status-item {
+
+    font-size: 17px;
+
+}
+
+.status-item span {
+
+    font-weight: bold;
+
+}
+
+
+/* BUTTON */
+
+button {
+
+    border: none;
+
+    background: #2563eb;
+
+    color: white;
+
+    padding: 12px 20px;
+
+    border-radius: 8px;
+
+    cursor: pointer;
+
+    font-size: 15px;
+
+}
+
+button:hover {
+
+    background: #1d4ed8;
+
+}
+
+
+/* METRICS */
+
+.section-title {
+
+    margin: 20px 0 12px;
+
+    font-size: 20px;
+
+}
+
+.metrics {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(auto-fit, minmax(180px, 1fr));
+
+    gap: 15px;
+
+}
+
+.metric-card {
+
+    background: white;
+
+    padding: 20px;
+
+    border-radius: 12px;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,0.08);
+
+}
+
+.metric-card h3 {
+
+    font-size: 14px;
+
+    color: #6b7280;
+
+    margin-bottom: 10px;
+
+}
+
+.metric-value {
+
+    font-size: 28px;
+
+    font-weight: bold;
+
+}
+
+
+/* ALERT */
+
+.alert-box {
+
+    margin-top: 20px;
+
+    padding: 20px;
+
+    background: white;
+
+    border-radius: 12px;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,0.08);
+
+}
+
+.alert-header {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    margin-bottom: 15px;
+
+}
+
+.warning {
+
+    font-size: 22px;
+
+}
+
+.severity {
+
+    padding: 6px 12px;
+
+    border-radius: 15px;
+
+    font-weight: bold;
+
+    font-size: 13px;
+
+}
+
+.severity.HIGH {
+
+    background: #fee2e2;
+    color: #b91c1c;
+
+}
+
+.severity.MEDIUM {
+
+    background: #fef3c7;
+    color: #92400e;
+
+}
+
+.severity.LOW {
+
+    background: #dcfce7;
+    color: #166534;
+
+}
+
+
+/* PROBLEM CARD */
+
+.problem-card {
+
+    border-left: 5px solid #dc2626;
+
+    background: #fef2f2;
+
+    padding: 18px;
+
+    border-radius: 8px;
+
+    margin-bottom: 12px;
+
+}
+
+.problem-card.MEDIUM {
+
+    border-left-color: #f59e0b;
+
+    background: #fffbeb;
+
+}
+
+.problem-card.LOW {
+
+    border-left-color: #16a34a;
+
+    background: #f0fdf4;
+
+}
+
+.info {
+
+    margin: 8px 0;
+
+    line-height: 1.5;
+
+}
+
+.info strong {
+
+    color: #111827;
+
+}
+
+
+/* PREDICTION */
+
+.prediction {
+
+    margin-top: 20px;
+
+    background: white;
+
+    padding: 20px;
+
+    border-radius: 12px;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,0.08);
+
+}
+
+.prediction-grid {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(auto-fit, minmax(180px, 1fr));
+
+    gap: 15px;
+
+    margin-top: 15px;
+
+}
+
+.prediction-item {
+
+    background: #f3f4f6;
+
+    padding: 18px;
+
+    border-radius: 8px;
+
+}
+
+.prediction-item h4 {
+
+    color: #6b7280;
+
+    margin-bottom: 8px;
+
+}
+
+
+/* CHART */
+
+.chart-box {
+
+    margin-top: 20px;
+
+    background: white;
+
+    padding: 20px;
+
+    border-radius: 12px;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,0.08);
+
+}
+
+canvas {
+
+    width: 100% !important;
+
+    height: 320px !important;
+
+}
+
+
+/* TABLE */
+
+.history-box {
+
+    margin-top: 20px;
+
+    background: white;
+
+    padding: 20px;
+
+    border-radius: 12px;
+
+    overflow-x: auto;
+
+}
+
+table {
+
+    width: 100%;
+
+    border-collapse: collapse;
+
+    margin-top: 15px;
+
+}
+
+th, td {
+
+    padding: 10px;
+
+    border-bottom: 1px solid #e5e7eb;
+
+    text-align: center;
+
+}
+
+th {
+
+    background: #f3f4f6;
+
+}
+
+
+/* MOBILE */
+
+@media(max-width:600px) {
+
+    header {
+
+        flex-direction: column;
+
+        gap: 10px;
+
+        align-items: flex-start;
+
+    }
+
+    .container {
+
+        padding: 15px;
+
+    }
+
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<header>
+
+    <h1>
+        AI-Based 4G/5G Traffic Prediction
+    </h1>
+
+    <div
+        id="connection"
+        class="connection">
+        Checking...
+    </div>
+
+</header>
+
+
+<div class="container">
+
+
+<!-- STATUS -->
+
+<div class="status-panel">
+
+    <div class="status-row">
+
+        <div class="status-item">
+
+            Phone:
+
+            <span id="phoneStatus">
+                Checking...
+            </span>
+
+        </div>
+
+
+        <div class="status-item">
+
+            Network:
+
+            <span id="networkStatus">
+                ---
+            </span>
+
+        </div>
+
+
+        <button onclick="collectData()">
+            Collect Network Data
+        </button>
+
+    </div>
+
+</div>
+
+
+<!-- METRICS -->
+
+<h2 class="section-title">
+    Current Network Metrics
+</h2>
+
+<div class="metrics">
+
+
+    <div class="metric-card">
+
+        <h3>
+            Network
+        </h3>
+
+        <div
+            class="metric-value"
+            id="networkValue">
+            ---
+        </div>
+
+    </div>
+
+
+    <div class="metric-card">
+
+        <h3>
+            Signal Strength
+        </h3>
+
+        <div
+            class="metric-value"
+            id="signalValue">
+            ---
+        </div>
+
+    </div>
+
+
+    <div class="metric-card">
+
+        <h3>
+            Download
+        </h3>
+
+        <div
+            class="metric-value"
+            id="downloadValue">
+            ---
+        </div>
+
+    </div>
+
+
+    <div class="metric-card">
+
+        <h3>
+            Upload
+        </h3>
+
+        <div
+            class="metric-value"
+            id="uploadValue">
+            ---
+        </div>
+
+    </div>
+
+
+    <div class="metric-card">
+
+        <h3>
+            Latency
+        </h3>
+
+        <div
+            class="metric-value"
+            id="latencyValue">
+            ---
+        </div>
+
+    </div>
+
+
+    <div class="metric-card">
+
+        <h3>
+            Traffic
+        </h3>
+
+        <div
+            class="metric-value"
+            id="trafficValue">
+            ---
+        </div>
+
+    </div>
+
+
+</div>
+
+
+<!-- PROBLEM ANALYSIS -->
+
+<div class="alert-box">
+
+    <div class="alert-header">
+
+        <h2>
+            ⚠ Network Problem & Solution
+        </h2>
+
+        <div
+            id="alertIndicator"
+            class="warning">
+            ●
+        </div>
+
+    </div>
+
+
+    <div id="problemContainer">
+
+        <p>
+            Collect network data to start analysis.
+        </p>
+
+    </div>
+
+</div>
+
+
+<!-- PREDICTION -->
+
+<div class="prediction">
+
+    <h2>
+        AI Traffic Prediction
+    </h2>
+
+
+    <div class="prediction-grid">
+
+
+        <div class="prediction-item">
+
+            <h4>
+                Current Traffic
+            </h4>
+
+            <strong
+                id="currentPrediction">
+                ---
+            </strong>
+
+        </div>
+
+
+        <div class="prediction-item">
+
+            <h4>
+                Next Period
+            </h4>
+
+            <strong
+                id="nextPrediction">
+                ---
+            </strong>
+
+        </div>
+
+
+        <div class="prediction-item">
+
+            <h4>
+                Predicted Traffic
+            </h4>
+
+            <strong
+                id="predictedValue">
+                ---
+            </strong>
+
+        </div>
+
+
+        <div class="prediction-item">
+
+            <h4>
+                Warning
+            </h4>
+
+            <strong
+                id="predictionWarning">
+                ---
+            </strong>
+
+        </div>
+
+
+    </div>
+
+</div>
+
+
+<!-- HISTORICAL GRAPH -->
+
+<div class="chart-box">
+
+    <h2>
+        Historical Traffic
+    </h2>
+
+    <canvas id="trafficChart"></canvas>
+
+</div>
+
+
+<!-- HISTORY -->
+
+<div class="history-box">
+
+    <h2>
+        Historical Network Data
+    </h2>
+
+    <table>
+
+        <thead>
+
+            <tr>
+
+                <th>Time</th>
+                <th>Network</th>
+                <th>Signal</th>
+                <th>Download</th>
+                <th>Upload</th>
+                <th>Latency</th>
+                <th>Traffic</th>
+
+            </tr>
+
+        </thead>
+
+        <tbody id="historyTable">
+
+        </tbody>
+
+    </table>
+
+</div>
+
+
+</div>
+
+
+<script>
+
+
+// --------------------------------------------------
+// CHECK STATUS
+// --------------------------------------------------
+
+async function checkStatus() {
+
+    try {
+
+        const response =
+            await fetch("/api/status");
+
+        const data =
+            await response.json();
+
+
+        const connection =
+            document.getElementById(
+                "connection"
+            );
+
+
+        if (data.phone_connected) {
+
+            connection.innerText =
+                "● Phone Connected";
+
+            connection.classList.remove(
+                "offline"
+            );
+
+            document.getElementById(
+                "phoneStatus"
+            ).innerText =
+                "Connected";
+
+            document.getElementById(
+                "networkStatus"
+            ).innerText =
+                data.network;
+
+            document.getElementById(
+                "networkValue"
+            ).innerText =
+                data.network;
+
+        } else {
+
+            connection.innerText =
+                "● Phone Offline";
+
+            connection.classList.add(
+                "offline"
+            );
+
+            document.getElementById(
+                "phoneStatus"
+            ).innerText =
+                "Not Connected";
+
+            document.getElementById(
+                "networkStatus"
+            ).innerText =
+                "NOT CONNECTED";
+
+        }
+
+    } catch(error) {
+
+        document.getElementById(
+            "connection"
+        ).innerText =
+            "● Server Offline";
+
+        document.getElementById(
+            "connection"
+        ).classList.add(
+            "offline"
+        );
+
+    }
+
+}
+
+
+// --------------------------------------------------
+// COLLECT DATA
+// --------------------------------------------------
+
+async function collectData() {
+
+    try {
+
+        const response =
+            await fetch("/api/collect");
+
+        const data =
+            await response.json();
+
+
+        if (!data.success) {
+
+            alert(
+                data.message
+            );
+
+            return;
+
+        }
+
+
+        document.getElementById(
+            "networkValue"
+        ).innerText =
+            data.network;
+
+
+        document.getElementById(
+            "networkStatus"
+        ).innerText =
+            data.network;
+
+
+        document.getElementById(
+            "signalValue"
+        ).innerText =
+            data.signal === 0
+            ? "N/A"
+            : data.signal + " dBm";
+
+
+        document.getElementById(
+            "downloadValue"
+        ).innerText =
+            data.download + " Mbps";
+
+
+        document.getElementById(
+            "uploadValue"
+        ).innerText =
+            data.upload + " Mbps";
+
+
+        document.getElementById(
+            "latencyValue"
+        ).innerText =
+            data.latency + " ms";
+
+
+        document.getElementById(
+            "trafficValue"
+        ).innerText =
+            data.traffic + " Mbps";
+
+
+        await analyzeNetwork();
+
+        await getPrediction();
+
+        await loadHistory();
+
+
+    } catch(error) {
+
+        console.error(error);
+
+        alert(
+            "Unable to collect network data."
+        );
+
+    }
+
+}
+
+
+// --------------------------------------------------
+// ANALYZE
+// --------------------------------------------------
+
+async function analyzeNetwork() {
+
+    try {
+
+        const response =
+            await fetch("/api/analyze");
+
+        const data =
+            await response.json();
+
+
+        const container =
+            document.getElementById(
+                "problemContainer"
+            );
+
+
+        container.innerHTML = "";
+
+
+        data.problems.forEach(problem => {
+
+
+            const card =
+                document.createElement(
+                    "div"
+                );
+
+
+            card.className =
+                "problem-card " +
+                problem.severity;
+
+
+            card.innerHTML = `
+
+                <div class="alert-header">
+
+                    <h3>
+                        ${problem.problem}
+                    </h3>
+
+                    <span
+                        class="severity ${problem.severity}">
+                        ${problem.severity}
+                    </span>
+
+                </div>
+
+
+                <div class="info">
+
+                    <strong>
+                        Current Network Status:
+                    </strong>
+
+                    ${problem.status}
+
+                </div>
+
+
+                <div class="info">
+
+                    <strong>
+                        Possible Cause:
+                    </strong>
+
+                    ${problem.cause}
+
+                </div>
+
+
+                <div class="info">
+
+                    <strong>
+                        Recommended Solution:
+                    </strong>
+
+                    ${problem.solution}
+
+                </div>
+
+
+                <div class="info">
+
+                    <strong>
+                        AI Prediction:
+                    </strong>
+
+                    ${problem.prediction}
+
+                </div>
+
+            `;
+
+
+            container.appendChild(
+                card
+            );
+
+        });
+
+
+        const warning =
+            data.problems.some(
+                p =>
+                    p.severity === "HIGH"
+                    ||
+                    p.severity === "MEDIUM"
+            );
+
+
+        document.getElementById(
+            "alertIndicator"
+        ).innerText =
+            warning
+            ? "⚠"
+            : "✓";
+
+    } catch(error) {
+
+        console.error(error);
+
+    }
+
+}
+
+
+// --------------------------------------------------
+// PREDICTION
+// --------------------------------------------------
+
+async function getPrediction() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/predict"
+            );
+
+        const data =
+            await response.json();
+
+
+        document.getElementById(
+            "currentPrediction"
+        ).innerText =
+            data.current;
+
+
+        document.getElementById(
+            "nextPrediction"
+        ).innerText =
+            data.next;
+
+
+        document.getElementById(
+            "predictedValue"
+        ).innerText =
+            data.value + " Mbps";
+
+
+        document.getElementById(
+            "predictionWarning"
+        ).innerText =
+            data.warning
+            ? "⚠ Possible Congestion"
+            : "✓ Stable";
+
+    } catch(error) {
+
+        console.error(error);
+
+    }
+
+}
+
+
+// --------------------------------------------------
+// HISTORY
+// --------------------------------------------------
+
+let chart;
+
+
+async function loadHistory() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/history"
+            );
+
+        const data =
+            await response.json();
+
+
+        const table =
+            document.getElementById(
+                "historyTable"
+            );
+
+
+        table.innerHTML = "";
+
+
+        data.slice()
+            .reverse()
+            .forEach(row => {
+
+
+                const tr =
+                    document.createElement(
+                        "tr"
+                    );
+
+
+                tr.innerHTML = `
+
+                    <td>
+                        ${row.timestamp}
+                    </td>
+
+                    <td>
+                        ${row.network}
+                    </td>
+
+                    <td>
+                        ${row.signal}
+                    </td>
+
+                    <td>
+                        ${row.download}
+                    </td>
+
+                    <td>
+                        ${row.upload}
+                    </td>
+
+                    <td>
+                        ${row.latency}
+                    </td>
+
+                    <td>
+                        ${row.traffic}
+                    </td>
+
+                `;
+
+
+                table.appendChild(tr);
+
+            });
+
+
+        drawChart(data);
+
+    } catch(error) {
+
+        console.error(error);
+
+    }
+
+}
+
+
+// --------------------------------------------------
+// HISTORICAL GRAPH
+// --------------------------------------------------
+
+function drawChart(data) {
+
+    const canvas =
+        document.getElementById(
+            "trafficChart"
+        );
+
+    const ctx =
+        canvas.getContext("2d");
+
+
+    const width =
+        canvas.width =
+        canvas.clientWidth * 2;
+
+
+    const height =
+        canvas.height =
+        canvas.clientHeight * 2;
+
+
+    ctx.scale(2, 2);
+
+
+    const w =
+        canvas.clientWidth;
+
+
+    const h =
+        canvas.clientHeight;
+
+
+    ctx.clearRect(
+        0,
+        0,
+        w,
+        h
+    );
+
+
+    if (!data.length) {
+
+        ctx.font =
+            "16px Arial";
+
+        ctx.fillText(
+            "No historical data available",
+            20,
+            40
+        );
+
+        return;
+
+    }
+
+
+    const values =
+        data.map(
+            item =>
+                Number(item.traffic) || 0
+        );
+
+
+    const max =
+        Math.max(
+            ...values,
+            10
+        );
+
+
+    const padding = 40;
+
+
+    // axes
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+        padding,
+        10
+    );
+
+    ctx.lineTo(
+        padding,
+        h - padding
+    );
+
+    ctx.lineTo(
+        w - 10,
+        h - padding
+    );
+
+    ctx.stroke();
+
+
+    // traffic line
+
+    ctx.beginPath();
+
+
+    values.forEach(
+        (value, index) => {
+
+
+            const x =
+                padding +
+                (
+                    index /
+                    Math.max(
+                        values.length - 1,
+                        1
+                    )
+                )
+                *
+                (
+                    w -
+                    padding -
+                    20
+                );
+
+
+            const y =
+                h -
+                padding -
+                (
+                    value /
+                    max
+                )
+                *
+                (
+                    h -
+                    padding -
+                    20
+                );
+
+
+            if (index === 0) {
+
+                ctx.moveTo(
+                    x,
+                    y
+                );
+
+            } else {
+
+                ctx.lineTo(
+                    x,
+                    y
+                );
+
+            }
+
+        }
+    );
+
+
+    ctx.stroke();
+
+
+    ctx.font =
+        "12px Arial";
+
+
+    ctx.fillText(
+        "Traffic (Mbps)",
+        10,
+        20
+    );
+
+}
+
+
+// --------------------------------------------------
+// AUTO MONITORING
+// --------------------------------------------------
+
+checkStatus();
+
+loadHistory();
+
+getPrediction();
+
+
+// Every 5 seconds status update
+
+setInterval(
+    checkStatus,
+    5000
+);
+
+
+// Every 15 seconds collect
+// fresh network data
+
+setInterval(
+    collectData,
+    15000
+);
+
+</script>
+
+
+</body>
+
+</html>
