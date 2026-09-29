@@ -1,0 +1,1241 @@
+import os
+import re
+import time
+import sqlite3
+import subprocess
+from datetime import datetime
+
+from flask import Flask, jsonify, send_from_directory
+
+
+# ============================================================
+# FLASK CONFIGURATION
+# ============================================================
+
+app = Flask(__name__)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DB_PATH = os.path.join(BASE_DIR, "traffic.db")
+
+ADB_PATH = r"C:\adrunio\platform-tools\adb.exe"
+
+
+# ============================================================
+# DATABASE
+# ============================================================
+
+def create_database():
+
+    connection = sqlite3.connect(DB_PATH)
+
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS traffic_data (
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            timestamp TEXT,
+
+            network TEXT,
+
+            signal REAL,
+
+            download REAL,
+
+            upload REAL,
+
+            latency REAL,
+
+            traffic REAL
+        )
+    """)
+
+    connection.commit()
+
+    connection.close()
+
+
+# ============================================================
+# ADB COMMAND
+# ============================================================
+
+def adb_command(command):
+
+    try:
+
+        if not os.path.exists(ADB_PATH):
+
+            print("ADB ERROR: File not found")
+            print("Path:", ADB_PATH)
+
+            return ""
+
+        result = subprocess.run(
+
+            [ADB_PATH, "shell"] + command.split(),
+
+            capture_output=True,
+
+            text=True,
+
+            timeout=15
+        )
+
+        if result.returncode != 0:
+
+            print("ADB COMMAND ERROR:")
+            print(result.stderr)
+
+            return ""
+
+        return result.stdout.strip()
+
+    except subprocess.TimeoutExpired:
+
+        print("ADB command timeout")
+
+        return ""
+
+    except Exception as error:
+
+        print("ADB error:", error)
+
+        return ""
+
+
+# ============================================================
+# CHECK PHONE CONNECTION
+# ============================================================
+
+def phone_connected():
+
+    try:
+
+        result = subprocess.run(
+
+            [ADB_PATH, "devices"],
+
+            capture_output=True,
+
+            text=True,
+
+            timeout=10
+        )
+
+        lines = result.stdout.splitlines()
+
+        for line in lines:
+
+            if "\tdevice" in line:
+
+                return True
+
+        return False
+
+    except Exception as error:
+
+        print("Phone connection error:", error)
+
+        return False
+
+
+# ============================================================
+# NETWORK TYPE
+# ============================================================
+
+def get_network_type():
+
+    output = adb_command("getprop gsm.network.type")
+
+    output_upper = output.upper()
+
+    # Real 5G / NR
+    if (
+        "NR" in output_upper
+        or "5G" in output_upper
+        or "NRNSA" in output_upper
+    ):
+
+        return "5G"
+
+    # Real 4G / LTE
+    if (
+        "LTE" in output_upper
+        or "4G" in output_upper
+    ):
+
+        return "4G"
+
+    # Fallback
+    service = get_service_state()
+
+    if service in ["5G", "4G"]:
+
+        return service
+
+    return "Unknown"
+
+
+# ============================================================
+# SERVICE STATE
+# ============================================================
+
+def get_service_state():
+
+    output = adb_command(
+        "dumpsys telephony.registry"
+    )
+
+    if not output:
+
+        return "Unknown"
+
+    text = output.upper()
+
+    # NR / 5G
+    if (
+        "ACCESSNETWORKTECHNOLOGY=NR" in text
+        or "NETWORKTYPE=NR" in text
+        or "NRSTATE" in text
+    ):
+
+        return "5G"
+
+    # LTE / 4G
+    if (
+        "ACCESSNETWORKTECHNOLOGY=LTE" in text
+        or "NETWORKTYPE=LTE" in text
+    ):
+
+        return "4G"
+
+    return "Unknown"
+
+
+# ============================================================
+# FINAL NETWORK DETECTION
+# ============================================================
+
+def detect_network():
+
+    network = get_network_type()
+
+    if network != "Unknown":
+
+        return network
+
+    return get_service_state()
+
+
+# ============================================================
+# SIGNAL STRENGTH
+# ============================================================
+
+def get_signal():
+
+    output = adb_command(
+        "dumpsys telephony.registry"
+    )
+
+    if not output:
+
+        return 0
+
+    values = []
+
+    # Example:
+    # mDbm=-95
+    matches = re.findall(
+        r"mDbm=(-?\d+)",
+        output
+    )
+
+    for value in matches:
+
+        try:
+
+            dbm = int(value)
+
+            # Ignore invalid Android sentinel values
+            if -150 < dbm < 0:
+
+                values.append(dbm)
+
+        except ValueError:
+
+            pass
+
+    if not values:
+
+        return 0
+
+    # Use strongest valid signal
+    return max(values)
+
+
+# ============================================================
+# NETWORK INTERFACE
+# ============================================================
+
+def get_network_interface():
+
+    output = adb_command(
+        "cat /proc/net/dev"
+    )
+
+    if not output:
+
+        return None
+
+    interfaces = []
+
+    for line in output.splitlines():
+
+        if ":" not in line:
+
+            continue
+
+        interface, data = line.split(
+            ":",
+            1
+        )
+
+        interface = interface.strip()
+
+        # Cellular interfaces
+        if (
+            interface.startswith("rmnet")
+            or interface.startswith("ccmni")
+            or interface.startswith("wwan")
+        ):
+
+            numbers = data.split()
+
+            if len(numbers) < 9:
+
+                continue
+
+            try:
+
+                rx = int(numbers[0])
+                tx = int(numbers[8])
+
+                total = rx + tx
+
+                interfaces.append(
+                    (
+                        interface,
+                        rx,
+                        tx,
+                        total
+                    )
+                )
+
+            except ValueError:
+
+                pass
+
+    if not interfaces:
+
+        return None
+
+    # Prefer rmnet_ipa0 when available
+    for item in interfaces:
+
+        if item[0] == "rmnet_ipa0":
+
+            return item[0]
+
+    # Otherwise choose interface with highest traffic
+    interfaces.sort(
+        key=lambda x: x[3],
+        reverse=True
+    )
+
+    return interfaces[0][0]
+
+
+# ============================================================
+# GET RX/TX BYTES
+# ============================================================
+
+def get_network_bytes():
+
+    interface = get_network_interface()
+
+    if not interface:
+
+        return 0, 0
+
+    output = adb_command(
+        "cat /proc/net/dev"
+    )
+
+    for line in output.splitlines():
+
+        if ":" not in line:
+
+            continue
+
+        name, data = line.split(
+            ":",
+            1
+        )
+
+        name = name.strip()
+
+        if name != interface:
+
+            continue
+
+        numbers = data.split()
+
+        if len(numbers) < 9:
+
+            return 0, 0
+
+        try:
+
+            rx = int(numbers[0])
+            tx = int(numbers[8])
+
+            return rx, tx
+
+        except ValueError:
+
+            return 0, 0
+
+    return 0, 0
+
+
+# ============================================================
+# MEASURE NETWORK TRAFFIC RATE
+# ============================================================
+
+def measure_speed():
+
+    rx1, tx1 = get_network_bytes()
+
+    time.sleep(1)
+
+    rx2, tx2 = get_network_bytes()
+
+    download_bytes = max(
+        0,
+        rx2 - rx1
+    )
+
+    upload_bytes = max(
+        0,
+        tx2 - tx1
+    )
+
+    # Bytes/sec -> Mbps
+    download_mbps = (
+        download_bytes * 8
+    ) / 1_000_000
+
+    upload_mbps = (
+        upload_bytes * 8
+    ) / 1_000_000
+
+    return (
+        round(download_mbps, 2),
+        round(upload_mbps, 2)
+    )
+
+
+# ============================================================
+# LATENCY
+# ============================================================
+
+def get_latency():
+
+    try:
+
+        start = time.perf_counter()
+
+        result = subprocess.run(
+
+            [
+                ADB_PATH,
+                "shell",
+                "ping",
+                "-c",
+                "1",
+                "-W",
+                "2",
+                "8.8.8.8"
+            ],
+
+            capture_output=True,
+
+            text=True,
+
+            timeout=5
+        )
+
+        end = time.perf_counter()
+
+        if result.returncode != 0:
+
+            return 0
+
+        latency_ms = (
+            end - start
+        ) * 1000
+
+        return round(
+            latency_ms,
+            2
+        )
+
+    except Exception as error:
+
+        print(
+            "Latency error:",
+            error
+        )
+
+        return 0
+
+
+# ============================================================
+# COLLECT NETWORK DATA
+# ============================================================
+
+def collect_network_data():
+
+    print("")
+    print("-----------------------------------")
+    print("Collecting real network data...")
+    print("-----------------------------------")
+
+    # Check phone
+    if not phone_connected():
+
+        print("Phone not connected")
+
+        return {
+            "success": False,
+            "message": "Android phone is not connected through ADB."
+        }
+
+    # Network
+    network = detect_network()
+
+    # Signal
+    signal = get_signal()
+
+    # Speed
+    download, upload = measure_speed()
+
+    # Latency
+    latency = get_latency()
+
+    # Traffic
+    traffic = download + upload
+
+    timestamp = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+    data = {
+
+        "success": True,
+
+        "timestamp": timestamp,
+
+        "network": network,
+
+        "signal": signal,
+
+        "download": download,
+
+        "upload": upload,
+
+        "latency": latency,
+
+        "traffic": round(
+            traffic,
+            2
+        )
+    }
+
+    print("")
+    print("NETWORK DATA")
+    print("Network   :", network)
+    print("Signal    :", signal, "dBm")
+    print("Download  :", download, "Mbps")
+    print("Upload    :", upload, "Mbps")
+    print("Latency   :", latency, "ms")
+    print("Traffic   :", traffic, "Mbps")
+    print("Time      :", timestamp)
+
+    return data
+
+
+# ============================================================
+# SAVE DATA
+# ============================================================
+
+def save_data(data):
+
+    connection = sqlite3.connect(
+        DB_PATH
+    )
+
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO traffic_data
+        (
+            timestamp,
+            network,
+            signal,
+            download,
+            upload,
+            latency,
+            traffic
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            data["timestamp"],
+            data["network"],
+            data["signal"],
+            data["download"],
+            data["upload"],
+            data["latency"],
+            data["traffic"]
+        )
+    )
+
+    connection.commit()
+
+    connection.close()
+
+
+# ============================================================
+# GET HISTORY
+# ============================================================
+
+def get_history():
+
+    connection = sqlite3.connect(
+        DB_PATH
+    )
+
+    connection.row_factory = sqlite3.Row
+
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM traffic_data
+        ORDER BY id DESC
+        LIMIT 50
+        """
+    )
+
+    rows = cursor.fetchall()
+
+    connection.close()
+
+    return [
+        dict(row)
+        for row in rows
+    ]
+
+
+# ============================================================
+# NETWORK ANALYSIS
+# ============================================================
+
+def analyze_network():
+
+    history = get_history()
+
+    if not history:
+
+        return {
+
+            "problem": "No Data",
+
+            "status": "Waiting",
+
+            "severity": "Low",
+
+            "cause": "Network data has not been collected yet.",
+
+            "solution": "Connect the phone and start data collection.",
+
+            "prediction": "Not available"
+        }
+
+    latest = history[0]
+
+    network = latest["network"]
+    signal = latest["signal"]
+    download = latest["download"]
+    upload = latest["upload"]
+    latency = latest["latency"]
+    traffic = latest["traffic"]
+
+    problems = []
+
+    # --------------------------------------------------------
+    # Weak Signal
+    # --------------------------------------------------------
+
+    if signal != 0 and signal < -110:
+
+        problems.append({
+
+            "problem": "Weak Signal",
+
+            "severity": "High",
+
+            "cause": "Low cellular signal strength.",
+
+            "solution": (
+                "Move to an open area or a location "
+                "with better network coverage."
+            )
+        })
+
+    elif signal != 0 and signal < -100:
+
+        problems.append({
+
+            "problem": "Weak Signal",
+
+            "severity": "Medium",
+
+            "cause": "Cellular signal strength is below normal.",
+
+            "solution": (
+                "Try moving closer to an area "
+                "with better network coverage."
+            )
+        })
+
+    # --------------------------------------------------------
+    # Low Download
+    # --------------------------------------------------------
+
+    if download < 1:
+
+        problems.append({
+
+            "problem": "Low Download Speed",
+
+            "severity": "High",
+
+            "cause": "Low observed cellular data rate.",
+
+            "solution": (
+                "Check network coverage, reduce background "
+                "network usage and retry the connection."
+            )
+        })
+
+    elif download < 5:
+
+        problems.append({
+
+            "problem": "Low Download Speed",
+
+            "severity": "Medium",
+
+            "cause": "Download traffic rate is relatively low.",
+
+            "solution": (
+                "Check signal quality and reduce unnecessary "
+                "background network usage."
+            )
+        })
+
+    # --------------------------------------------------------
+    # Low Upload
+    # --------------------------------------------------------
+
+    if upload < 0.5:
+
+        problems.append({
+
+            "problem": "Low Upload Speed",
+
+            "severity": "Medium",
+
+            "cause": "Low observed upload traffic rate.",
+
+            "solution": (
+                "Check signal quality and network congestion."
+            )
+        })
+
+    # --------------------------------------------------------
+    # High Latency
+    # --------------------------------------------------------
+
+    if latency > 150:
+
+        problems.append({
+
+            "problem": "High Latency",
+
+            "severity": "High",
+
+            "cause": "Network response delay is high.",
+
+            "solution": (
+                "Check network congestion and signal quality."
+            )
+        })
+
+    elif latency > 80:
+
+        problems.append({
+
+            "problem": "Moderate Latency",
+
+            "severity": "Medium",
+
+            "cause": "Network response delay is above normal.",
+
+            "solution": (
+                "Monitor the connection and check for congestion."
+            )
+        })
+
+    # --------------------------------------------------------
+    # High Traffic / Congestion
+    # --------------------------------------------------------
+
+    if traffic > 50:
+
+        problems.append({
+
+            "problem": "High Traffic",
+
+            "severity": "High",
+
+            "cause": "High cellular traffic load detected.",
+
+            "solution": (
+                "Monitor traffic growth and consider "
+                "resource optimization."
+            )
+        })
+
+    # --------------------------------------------------------
+    # 5G Stability
+    # --------------------------------------------------------
+
+    if network == "5G":
+
+        recent_networks = [
+            row["network"]
+            for row in history[:10]
+        ]
+
+        four_g_count = recent_networks.count("4G")
+        five_g_count = recent_networks.count("5G")
+
+        if four_g_count > five_g_count:
+
+            problems.append({
+
+                "problem": "Unstable 5G",
+
+                "severity": "Medium",
+
+                "cause": (
+                    "Recent measurements show frequent "
+                    "5G to 4G changes."
+                ),
+
+                "solution": (
+                    "Monitor 5G coverage and signal stability."
+                )
+            })
+
+    # --------------------------------------------------------
+    # No Problems
+    # --------------------------------------------------------
+
+    if not problems:
+
+        return {
+
+            "problem": "No Major Problem",
+
+            "status": "Healthy",
+
+            "severity": "Low",
+
+            "cause": "Network parameters are within monitored limits.",
+
+            "solution": "Continue monitoring the network.",
+
+            "prediction": "Stable"
+        }
+
+    # Select highest severity problem
+    severity_order = {
+        "High": 3,
+        "Medium": 2,
+        "Low": 1
+    }
+
+    problems.sort(
+        key=lambda x:
+        severity_order.get(
+            x["severity"],
+            0
+        ),
+        reverse=True
+    )
+
+    main_problem = problems[0]
+
+    return {
+
+        "problem": main_problem["problem"],
+
+        "status": "Problem Detected",
+
+        "severity": main_problem["severity"],
+
+        "cause": main_problem["cause"],
+
+        "solution": main_problem["solution"],
+
+        "all_problems": problems,
+
+        "prediction": "See traffic prediction"
+    }
+
+
+# ============================================================
+# TRAFFIC PREDICTION
+# ============================================================
+
+def predict_traffic():
+
+    history = get_history()
+
+    if not history:
+
+        return {
+
+            "success": False,
+
+            "message": "Not enough data for prediction."
+        }
+
+    traffic_values = []
+
+    for row in history:
+
+        try:
+
+            traffic_values.append(
+                float(row["traffic"])
+            )
+
+        except:
+
+            pass
+
+    if not traffic_values:
+
+        return {
+
+            "success": False,
+
+            "message": "No traffic values available."
+        }
+
+    # Recent values
+    recent = traffic_values[:5]
+
+    recent_average = (
+        sum(recent)
+        / len(recent)
+    )
+
+    # Overall average
+    overall_average = (
+        sum(traffic_values)
+        / len(traffic_values)
+    )
+
+    # Simple trend prediction
+    predicted = (
+        recent_average * 0.7
+        +
+        overall_average * 0.3
+    )
+
+    predicted = round(
+        predicted,
+        2
+    )
+
+    # Trend
+    if predicted > recent_average * 1.15:
+
+        trend = "Increasing"
+
+    elif predicted < recent_average * 0.85:
+
+        trend = "Decreasing"
+
+    else:
+
+        trend = "Stable"
+
+    # Congestion prediction
+    if predicted > 50:
+
+        congestion = "High"
+
+    elif predicted > 20:
+
+        congestion = "Medium"
+
+    else:
+
+        congestion = "Low"
+
+    return {
+
+        "success": True,
+
+        "predicted_traffic": predicted,
+
+        "unit": "Mbps",
+
+        "trend": trend,
+
+        "predicted_congestion": congestion,
+
+        "message": (
+            "Traffic prediction generated from "
+            "recent collected network data."
+        )
+    }
+
+
+# ============================================================
+# HOME PAGE
+# ============================================================
+
+@app.route("/")
+def home():
+
+    return send_from_directory(
+        BASE_DIR,
+        "index.html"
+    )
+
+
+# ============================================================
+# STATUS API
+# ============================================================
+
+@app.route("/api/status")
+def api_status():
+
+    connected = phone_connected()
+
+    if connected:
+
+        network = detect_network()
+
+    else:
+
+        network = "Disconnected"
+
+    return jsonify({
+
+        "phone_connected": connected,
+
+        "network": network
+    })
+
+
+# ============================================================
+# COLLECT API
+# ============================================================
+
+@app.route("/api/collect")
+def api_collect():
+
+    try:
+
+        data = collect_network_data()
+
+        if not data.get("success"):
+
+            return jsonify(data)
+
+        save_data(data)
+
+        return jsonify(data)
+
+    except Exception as error:
+
+        print(
+            "COLLECTION ERROR:",
+            error
+        )
+
+        return jsonify({
+
+            "success": False,
+
+            "message": str(error)
+        }), 500
+
+
+# ============================================================
+# ANALYSIS API
+# ============================================================
+
+@app.route("/api/analyze")
+def api_analyze():
+
+    try:
+
+        result = analyze_network()
+
+        return jsonify(result)
+
+    except Exception as error:
+
+        return jsonify({
+
+            "success": False,
+
+            "message": str(error)
+        }), 500
+
+
+# ============================================================
+# PREDICTION API
+# ============================================================
+
+@app.route("/api/predict")
+def api_predict():
+
+    try:
+
+        result = predict_traffic()
+
+        return jsonify(result)
+
+    except Exception as error:
+
+        return jsonify({
+
+            "success": False,
+
+            "message": str(error)
+        }), 500
+
+
+# ============================================================
+# HISTORY API
+# ============================================================
+
+@app.route("/api/history")
+def api_history():
+
+    try:
+
+        data = get_history()
+
+        return jsonify(data)
+
+    except Exception as error:
+
+        return jsonify({
+
+            "success": False,
+
+            "message": str(error)
+        }), 500
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+if __name__ == "__main__":
+
+    create_database()
+
+    print("")
+    print("===================================")
+    print("       4G / 5G TRAFFIC SYSTEM")
+    print("===================================")
+    print("ADB Path :", ADB_PATH)
+    print("Database :", DB_PATH)
+    print("Website  : http://127.0.0.1:8765")
+    print("Phone    : ADB + USB")
+    print("Data     : SQLite")
+    print("Analysis : Network Rule Analysis")
+    print("Prediction: Traffic Trend")
+    print("===================================")
+    print("")
+
+    # Check ADB
+    if os.path.exists(ADB_PATH):
+
+        print("ADB STATUS : FOUND")
+
+    else:
+
+        print("ADB STATUS : NOT FOUND")
+        print("Check ADB_PATH in server.py")
+
+    # Check phone
+    if phone_connected():
+
+        print("PHONE STATUS : CONNECTED")
+
+        print(
+            "NETWORK      :",
+            detect_network()
+        )
+
+    else:
+
+        print(
+            "PHONE STATUS : NOT CONNECTED"
+        )
+
+    print("")
+    print("Starting Flask server...")
+    print("Do NOT close this terminal.")
+    print("")
+
+    app.run(
+
+        host="127.0.0.1",
+
+        port=8765,
+
+        debug=False,
+
+        use_reloader=False,
+
+        threaded=True
+    )
